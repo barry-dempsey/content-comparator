@@ -119,7 +119,6 @@ h5. Action Items:
 }
 
 module.exports = {
-  createJiraClient,
   createTicket,
   formatMissingKeysForJira
 };
