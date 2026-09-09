@@ -21,3 +21,4 @@ app.get('/', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Content Comparator server running on port ${PORT}`);
 });
+// Force redeploy Wed Sep  9 13:37:20 CEST 2026
