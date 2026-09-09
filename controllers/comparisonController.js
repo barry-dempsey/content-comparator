@@ -204,11 +204,14 @@ exports.createJiraTicket = async (req, res) => {
       });
     }
 
+    // Set response timeout
+    req.setTimeout(35000);
+
     const description = formatMissingKeysForJira(missingKeys, sourceData, targetLanguageName || 'Target');
     const ticketSummary = summary || `Missing translations for ${targetLanguageName || 'Target'} (${missingKeys.length} keys)`;
 
     const ticket = await createTicket(jiraConfig, {
-      projectKey,
+      projectKey: jiraConfig.projectKey,
       summary: ticketSummary,
       description,
       issueType: 'Task',

@@ -937,6 +937,9 @@
       messageEl.innerHTML = '⏳ Testing connection...';
       statusEl.style.display = 'block';
 
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 35000);
+
       fetch('/api/create-jira-ticket', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -946,10 +949,12 @@
           sourceData: {},
           targetLanguageName: 'Test',
           projectKey: config.projectKey
-        })
+        }),
+        signal: controller.signal
       })
       .then(res => res.json())
       .then(data => {
+        clearTimeout(timeout);
         if (data.error) {
           messageEl.innerHTML = `❌ Connection failed: ${data.error}`;
           messageEl.style.color = 'var(--error)';
@@ -960,7 +965,9 @@
         }
       })
       .catch(err => {
-        messageEl.innerHTML = `❌ Error: ${err.message}`;
+        clearTimeout(timeout);
+        const errMsg = err.name === 'AbortError' ? 'Connection timeout - check your Jira URL and network' : err.message;
+        messageEl.innerHTML = `❌ Error: ${errMsg}`;
         messageEl.style.color = 'var(--error)';
       });
     }

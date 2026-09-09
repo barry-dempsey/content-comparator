@@ -1,9 +1,22 @@
 const JiraClient = require('jira-client');
 
 function createJiraClient(config) {
+  // Strip protocol from host if included
+  let host = config.host;
+  let protocol = 'https';
+
+  if (host.includes('://')) {
+    const parts = host.split('://');
+    protocol = parts[0];
+    host = parts[1];
+  }
+
+  // Remove trailing slash
+  host = host.replace(/\/$/, '');
+
   return new JiraClient({
-    protocol: config.protocol || 'https',
-    host: config.host,
+    protocol: config.protocol || protocol,
+    host: host,
     username: config.username,
     password: config.apiToken,
     apiVersion: '2',
@@ -26,12 +39,28 @@ async function createTicket(jiraConfig, ticketData) {
       }
     };
 
-    const result = await jira.addNewIssue(issue);
+    // Add timeout to request
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Jira connection timeout (30s)')), 30000)
+    );
+
+    const result = await Promise.race([
+      jira.addNewIssue(issue),
+      timeoutPromise
+    ]);
+
+    // Build link with clean host
+    let host = jiraConfig.host;
+    if (host.includes('://')) {
+      host = host.split('://')[1];
+    }
+    host = host.replace(/\/$/, '');
+
     return {
       success: true,
       ticketKey: result.key,
       ticketId: result.id,
-      link: `${jiraConfig.protocol || 'https'}://${jiraConfig.host}/browse/${result.key}`
+      link: `https://${host}/browse/${result.key}`
     };
   } catch (error) {
     throw new Error(`Failed to create Jira ticket: ${error.message}`);
