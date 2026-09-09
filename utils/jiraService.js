@@ -1,5 +1,4 @@
-const https = require('https');
-const http = require('http');
+const axios = require('axios');
 
 function buildJiraUrl(config) {
   let host = config.host;
@@ -15,75 +14,80 @@ function buildJiraUrl(config) {
   return { protocol, host };
 }
 
+function getApiVersion(host) {
+  // Atlassian Cloud uses API v3, self-hosted uses v2
+  return host.includes('atlassian.net') ? '3' : '2';
+}
+
 async function makeJiraRequest(config, path, method = 'POST', data = null) {
   const { protocol, host } = buildJiraUrl(config);
   const auth = Buffer.from(`${config.username}:${config.apiToken}`).toString('base64');
+  const baseUrl = `${protocol}://${host}`;
 
-  console.log(`[Jira] ${method} ${protocol}://${host}${path}`);
+  console.log(`[Jira] ${method} ${baseUrl}${path}`);
 
-  return new Promise((resolve, reject) => {
-    const options = {
-      hostname: host,
-      path: path,
+  try {
+    const response = await axios({
       method: method,
+      url: `${baseUrl}${path}`,
+      data: data,
       headers: {
         'Authorization': `Basic ${auth}`,
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'User-Agent': 'ContentComparator/1.0'
       },
-      timeout: 25000
-    };
-
-    const client = protocol === 'http' ? http : https;
-
-    const req = client.request(options, (res) => {
-      console.log(`[Jira] Response status: ${res.statusCode}`);
-      let responseData = '';
-
-      res.on('data', chunk => {
-        responseData += chunk;
-      });
-
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(responseData);
-          if (res.statusCode >= 400) {
-            reject(new Error(`Jira error (${res.statusCode}): ${parsed.errorMessages?.[0] || parsed.message || 'Unknown error'}`));
-          } else {
-            resolve(parsed);
-          }
-        } catch (e) {
-          reject(new Error(`Failed to parse Jira response: ${responseData.substring(0, 100)}`));
-        }
-      });
+      timeout: 20000
     });
 
-    req.on('error', (err) => {
-      console.error(`[Jira] Connection error:`, err.message);
-      reject(new Error(`Connection error: ${err.message}`));
-    });
-
-    req.on('timeout', () => {
-      console.error(`[Jira] Request timeout`);
-      req.destroy();
-      reject(new Error('Jira connection timeout - server not responding'));
-    });
-
-    if (data) {
-      req.write(JSON.stringify(data));
+    console.log(`[Jira] Response status: ${response.status}`);
+    return response.data;
+  } catch (error) {
+    console.error(`[Jira] Error:`, error.message);
+    if (error.response) {
+      const errorMsg = error.response.data?.errorMessages?.[0] ||
+                       error.response.data?.message ||
+                       `HTTP ${error.response.status}`;
+      throw new Error(`Jira error: ${errorMsg}`);
+    } else if (error.code === 'ECONNABORTED') {
+      throw new Error('Jira connection timeout');
+    } else {
+      throw new Error(`Connection failed: ${error.message}`);
     }
-    req.end();
-  });
+  }
 }
 
 async function createTicket(jiraConfig, ticketData) {
   try {
+    const { host } = buildJiraUrl(jiraConfig);
+    const apiVersion = getApiVersion(host);
+
+    // Format description based on API version
+    let descriptionField = ticketData.description;
+    if (apiVersion === '3') {
+      // Atlassian Cloud (API v3) uses ADF format
+      descriptionField = {
+        type: 'doc',
+        version: 1,
+        content: [
+          {
+            type: 'paragraph',
+            content: [
+              {
+                type: 'text',
+                text: ticketData.description
+              }
+            ]
+          }
+        ]
+      };
+    }
+
     const issue = {
       fields: {
         project: { key: ticketData.projectKey },
         summary: ticketData.summary,
-        description: ticketData.description,
+        description: descriptionField,
         issuetype: { name: ticketData.issueType || 'Task' },
         labels: ticketData.labels || []
       }
@@ -93,9 +97,10 @@ async function createTicket(jiraConfig, ticketData) {
       issue.fields.assignee = { name: ticketData.assignee };
     }
 
-    const result = await makeJiraRequest(jiraConfig, '/rest/api/2/issue', 'POST', issue);
+    const apiPath = apiVersion === '3' ? '/rest/api/3/issues' : '/rest/api/2/issue';
+    const result = await makeJiraRequest(jiraConfig, apiPath, 'POST', issue);
 
-    const { protocol, host } = buildJiraUrl(jiraConfig);
+    const { protocol } = buildJiraUrl(jiraConfig);
     return {
       success: true,
       ticketKey: result.key,
