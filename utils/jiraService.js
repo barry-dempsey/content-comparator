@@ -1,7 +1,7 @@
-const JiraClient = require('jira-client');
+const https = require('https');
+const http = require('http');
 
-function createJiraClient(config) {
-  // Strip protocol from host if included
+function buildJiraUrl(config) {
   let host = config.host;
   let protocol = 'https';
 
@@ -11,56 +11,87 @@ function createJiraClient(config) {
     host = parts[1];
   }
 
-  // Remove trailing slash
   host = host.replace(/\/$/, '');
+  return { protocol, host };
+}
 
-  return new JiraClient({
-    protocol: config.protocol || protocol,
-    host: host,
-    username: config.username,
-    password: config.apiToken,
-    apiVersion: '2',
-    strictSSL: true
+async function makeJiraRequest(config, path, method = 'POST', data = null) {
+  const { protocol, host } = buildJiraUrl(config);
+  const auth = Buffer.from(`${config.username}:${config.apiToken}`).toString('base64');
+
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: host,
+      path: path,
+      method: method,
+      headers: {
+        'Authorization': `Basic ${auth}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      timeout: 15000
+    };
+
+    const client = protocol === 'http' ? http : https;
+
+    const req = client.request(options, (res) => {
+      let responseData = '';
+
+      res.on('data', chunk => {
+        responseData += chunk;
+      });
+
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(responseData);
+          if (res.statusCode >= 400) {
+            reject(new Error(`Jira error (${res.statusCode}): ${parsed.errorMessages?.[0] || parsed.message || 'Unknown error'}`));
+          } else {
+            resolve(parsed);
+          }
+        } catch (e) {
+          reject(new Error(`Failed to parse Jira response: ${responseData.substring(0, 100)}`));
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Jira connection timeout'));
+    });
+
+    if (data) {
+      req.write(JSON.stringify(data));
+    }
+    req.end();
   });
 }
 
 async function createTicket(jiraConfig, ticketData) {
   try {
-    const jira = createJiraClient(jiraConfig);
-
     const issue = {
       fields: {
         project: { key: ticketData.projectKey },
         summary: ticketData.summary,
         description: ticketData.description,
         issuetype: { name: ticketData.issueType || 'Task' },
-        assignee: ticketData.assignee ? { name: ticketData.assignee } : undefined,
         labels: ticketData.labels || []
       }
     };
 
-    // Add timeout to request
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Jira connection timeout (30s)')), 30000)
-    );
-
-    const result = await Promise.race([
-      jira.addNewIssue(issue),
-      timeoutPromise
-    ]);
-
-    // Build link with clean host
-    let host = jiraConfig.host;
-    if (host.includes('://')) {
-      host = host.split('://')[1];
+    if (ticketData.assignee) {
+      issue.fields.assignee = { name: ticketData.assignee };
     }
-    host = host.replace(/\/$/, '');
 
+    const result = await makeJiraRequest(jiraConfig, '/rest/api/2/issue', 'POST', issue);
+
+    const { protocol, host } = buildJiraUrl(jiraConfig);
     return {
       success: true,
       ticketKey: result.key,
       ticketId: result.id,
-      link: `https://${host}/browse/${result.key}`
+      link: `${protocol}://${host}/browse/${result.key}`
     };
   } catch (error) {
     throw new Error(`Failed to create Jira ticket: ${error.message}`);
