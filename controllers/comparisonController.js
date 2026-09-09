@@ -175,17 +175,32 @@ exports.batchCompareFiles = (req, res) => {
 
 exports.createJiraTicket = async (req, res) => {
   try {
-    const { jiraConfig, missingKeys, sourceData, targetLanguageName, projectKey, summary } = req.body;
+    let { jiraConfig, missingKeys, sourceData, targetLanguageName, projectKey, summary } = req.body;
 
-    if (!jiraConfig || !missingKeys || !sourceData || !projectKey) {
+    if (!missingKeys || !sourceData) {
       return res.status(400).json({
-        error: 'jiraConfig, missingKeys, sourceData, and projectKey are required'
+        error: 'missingKeys and sourceData are required'
       });
     }
 
-    if (!jiraConfig.host || !jiraConfig.username || !jiraConfig.apiToken) {
+    // Use environment variables if jiraConfig not provided
+    if (!jiraConfig) {
+      jiraConfig = {
+        host: process.env.JIRA_HOST,
+        username: process.env.JIRA_USERNAME,
+        apiToken: process.env.JIRA_API_TOKEN,
+        projectKey: process.env.JIRA_PROJECT_KEY
+      };
+    }
+
+    // Override with request projectKey if provided
+    if (projectKey) {
+      jiraConfig.projectKey = projectKey;
+    }
+
+    if (!jiraConfig.host || !jiraConfig.username || !jiraConfig.apiToken || !jiraConfig.projectKey) {
       return res.status(400).json({
-        error: 'jiraConfig must include host, username, and apiToken'
+        error: 'Jira configuration missing. Set environment variables (JIRA_HOST, JIRA_USERNAME, JIRA_API_TOKEN, JIRA_PROJECT_KEY) or provide jiraConfig in request'
       });
     }
 

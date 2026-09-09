@@ -977,9 +977,6 @@
     function createSingleJiraTicket() {
       if (!currentSingleResult) return;
 
-      const config = getJiraConfig();
-      if (!config) return;
-
       let sourceData = {};
       try {
         const sourceText = document.getElementById('sourceJSON').value;
@@ -991,15 +988,17 @@
 
       const targetLanguageName = document.getElementById('targetLanguageName').value || 'Target';
 
+      // Try UI config first, fall back to environment variables
+      const config = getJiraConfig();
+
       fetch('/api/create-jira-ticket', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          jiraConfig: config,
+          jiraConfig: config || null,
           missingKeys: currentSingleResult.missingKeys,
           sourceData: sourceData,
-          targetLanguageName: targetLanguageName,
-          projectKey: config.projectKey
+          targetLanguageName: targetLanguageName
         })
       })
       .then(res => res.json())
