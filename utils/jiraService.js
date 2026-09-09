@@ -100,12 +100,12 @@ async function createTicket(jiraConfig, ticketData) {
     const apiPath = apiVersion === '3' ? '/rest/api/3/issues' : '/rest/api/2/issue';
     const result = await makeJiraRequest(jiraConfig, apiPath, 'POST', issue);
 
-    const { protocol } = buildJiraUrl(jiraConfig);
+    const { protocol: jiraProtocol, host: jiraHost } = buildJiraUrl(jiraConfig);
     return {
       success: true,
       ticketKey: result.key,
       ticketId: result.id,
-      link: `${protocol}://${host}/browse/${result.key}`
+      link: `${jiraProtocol}://${jiraHost}/browse/${result.key}`
     };
   } catch (error) {
     throw new Error(`Failed to create Jira ticket: ${error.message}`);
