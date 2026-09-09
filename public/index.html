@@ -1029,6 +1029,18 @@ h5. Action Items:
       navigator.clipboard.writeText(content).then(() => {
         showSuccess('Jira ticket content copied to clipboard!');
 
+        // Create backdrop
+        const backdrop = document.createElement('div');
+        backdrop.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0,0,0,0.5);
+          z-index: 9999;
+        `;
+
         // Show the content in a modal
         const modal = document.createElement('div');
         modal.style.cssText = `
@@ -1048,28 +1060,44 @@ h5. Action Items:
         `;
 
         modal.innerHTML = `
-          <div style="margin-bottom: 15px;">
-            <h3 style="margin: 0 0 10px 0;">Jira Ticket Content</h3>
-            <p style="font-size: 12px; color: var(--text-secondary); margin: 0;">
-              This content is already copied to your clipboard. Paste it in Jira!
-            </p>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h3 style="margin: 0;">Jira Ticket Content</h3>
+            <button class="close-btn" style="background: none; border: none; font-size: 24px; cursor: pointer; color: var(--text-secondary); padding: 0; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;">×</button>
           </div>
+          <p style="font-size: 12px; color: var(--text-secondary); margin: 0 0 15px 0;">
+            Content copied to clipboard. Paste it in Jira!
+          </p>
           <textarea readonly style="width: 100%; height: 300px; font-family: monospace; font-size: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary);">${content}</textarea>
           <div style="margin-top: 15px; text-align: right;">
-            <button onclick="this.closest('div').parentNode.removeChild(this.closest('div'))" class="btn-secondary">Close</button>
+            <button class="close-btn btn-secondary">Close</button>
           </div>
         `;
 
+        document.body.appendChild(backdrop);
         document.body.appendChild(modal);
 
-        // Close on escape key
-        const closeModal = (e) => {
+        // Close function
+        const closeModal = () => {
+          document.body.removeChild(modal);
+          document.body.removeChild(backdrop);
+        };
+
+        // Close button click
+        modal.querySelectorAll('.close-btn').forEach(btn => {
+          btn.addEventListener('click', closeModal);
+        });
+
+        // Backdrop click to close
+        backdrop.addEventListener('click', closeModal);
+
+        // Escape key to close
+        const onEscape = (e) => {
           if (e.key === 'Escape') {
-            document.body.removeChild(modal);
-            document.removeEventListener('keydown', closeModal);
+            closeModal();
+            document.removeEventListener('keydown', onEscape);
           }
         };
-        document.addEventListener('keydown', closeModal);
+        document.addEventListener('keydown', onEscape);
       }).catch(err => {
         showError(`Failed to copy: ${err.message}`);
       });
