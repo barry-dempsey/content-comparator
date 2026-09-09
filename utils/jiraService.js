@@ -19,6 +19,8 @@ async function makeJiraRequest(config, path, method = 'POST', data = null) {
   const { protocol, host } = buildJiraUrl(config);
   const auth = Buffer.from(`${config.username}:${config.apiToken}`).toString('base64');
 
+  console.log(`[Jira] ${method} ${protocol}://${host}${path}`);
+
   return new Promise((resolve, reject) => {
     const options = {
       hostname: host,
@@ -27,14 +29,16 @@ async function makeJiraRequest(config, path, method = 'POST', data = null) {
       headers: {
         'Authorization': `Basic ${auth}`,
         'Content-Type': 'application/json',
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'User-Agent': 'ContentComparator/1.0'
       },
-      timeout: 15000
+      timeout: 25000
     };
 
     const client = protocol === 'http' ? http : https;
 
     const req = client.request(options, (res) => {
+      console.log(`[Jira] Response status: ${res.statusCode}`);
       let responseData = '';
 
       res.on('data', chunk => {
@@ -55,10 +59,15 @@ async function makeJiraRequest(config, path, method = 'POST', data = null) {
       });
     });
 
-    req.on('error', reject);
+    req.on('error', (err) => {
+      console.error(`[Jira] Connection error:`, err.message);
+      reject(new Error(`Connection error: ${err.message}`));
+    });
+
     req.on('timeout', () => {
+      console.error(`[Jira] Request timeout`);
       req.destroy();
-      reject(new Error('Jira connection timeout'));
+      reject(new Error('Jira connection timeout - server not responding'));
     });
 
     if (data) {
