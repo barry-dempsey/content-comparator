@@ -480,7 +480,7 @@
           <button class="btn-success" onclick="exportAsJSON()">Export as JSON</button>
           <button class="btn-success" onclick="exportAsCSV()">Export as CSV</button>
           <button class="btn-success" onclick="exportAsReport()">Export as Report</button>
-          <button class="btn-success" onclick="createSingleJiraTicket()" style="background-color: var(--accent);">Create Jira Ticket</button>
+          <button class="btn-success" onclick="copyJiraContent()" style="background-color: var(--accent);">Copy Jira Ticket Content</button>
         </div>
       </div>
 
@@ -979,6 +979,100 @@
       document.getElementById('jiraProjectKey').value = '';
       localStorage.removeItem('jiraConfig');
       showSuccess('Jira settings cleared');
+    }
+
+    function generateJiraContent() {
+      if (!currentSingleResult || !currentSingleResult.missingKeys) return null;
+
+      let sourceData = {};
+      try {
+        const sourceText = document.getElementById('sourceJSON').value;
+        sourceData = JSON.parse(sourceText);
+      } catch (e) {
+        return null;
+      }
+
+      const targetLanguageName = document.getElementById('targetLanguageName').value || 'Target';
+      const missingKeys = currentSingleResult.missingKeys;
+
+      const keyDetails = missingKeys.map(key => {
+        const value = sourceData[key];
+        return `- *${key}*: "${value}"`;
+      }).join('\n');
+
+      return `h3. Missing Keys in ${targetLanguageName}
+
+*Total Missing:* ${missingKeys.length}
+
+h4. Keys:
+${keyDetails}
+
+h5. Action Items:
+- [ ] Review missing keys
+- [ ] Provide translations
+- [ ] Verify completeness`;
+    }
+
+    function copyJiraContent() {
+      if (!currentSingleResult) {
+        showError('Run a comparison first');
+        return;
+      }
+
+      const content = generateJiraContent();
+      if (!content) {
+        showError('Could not generate Jira content');
+        return;
+      }
+
+      // Copy to clipboard
+      navigator.clipboard.writeText(content).then(() => {
+        showSuccess('Jira ticket content copied to clipboard!');
+
+        // Show the content in a modal
+        const modal = document.createElement('div');
+        modal.style.cssText = `
+          position: fixed;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          background: var(--bg-secondary);
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          padding: 20px;
+          max-width: 600px;
+          max-height: 80vh;
+          overflow-y: auto;
+          z-index: 10000;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        `;
+
+        modal.innerHTML = `
+          <div style="margin-bottom: 15px;">
+            <h3 style="margin: 0 0 10px 0;">Jira Ticket Content</h3>
+            <p style="font-size: 12px; color: var(--text-secondary); margin: 0;">
+              This content is already copied to your clipboard. Paste it in Jira!
+            </p>
+          </div>
+          <textarea readonly style="width: 100%; height: 300px; font-family: monospace; font-size: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary);">${content}</textarea>
+          <div style="margin-top: 15px; text-align: right;">
+            <button onclick="this.closest('div').parentNode.removeChild(this.closest('div'))" class="btn-secondary">Close</button>
+          </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        // Close on escape key
+        const closeModal = (e) => {
+          if (e.key === 'Escape') {
+            document.body.removeChild(modal);
+            document.removeEventListener('keydown', closeModal);
+          }
+        };
+        document.addEventListener('keydown', closeModal);
+      }).catch(err => {
+        showError(`Failed to copy: ${err.message}`);
+      });
     }
 
     function createSingleJiraTicket() {
