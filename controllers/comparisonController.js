@@ -5,6 +5,7 @@ const {
   generateCSV,
   generateBatchReport
 } = require('../utils/comparator');
+const { createTicket, formatMissingKeysForJira } = require('../utils/jiraService');
 
 function parseJSONFile(fileBuffer) {
   try {
@@ -169,5 +170,38 @@ exports.batchCompareFiles = (req, res) => {
     res.json(results);
   } catch (error) {
     res.status(400).json({ error: error.message });
+  }
+};
+
+exports.createJiraTicket = async (req, res) => {
+  try {
+    const { jiraConfig, missingKeys, sourceData, targetLanguageName, projectKey, summary } = req.body;
+
+    if (!jiraConfig || !missingKeys || !sourceData || !projectKey) {
+      return res.status(400).json({
+        error: 'jiraConfig, missingKeys, sourceData, and projectKey are required'
+      });
+    }
+
+    if (!jiraConfig.host || !jiraConfig.username || !jiraConfig.apiToken) {
+      return res.status(400).json({
+        error: 'jiraConfig must include host, username, and apiToken'
+      });
+    }
+
+    const description = formatMissingKeysForJira(missingKeys, sourceData, targetLanguageName || 'Target');
+    const ticketSummary = summary || `Missing translations for ${targetLanguageName || 'Target'} (${missingKeys.length} keys)`;
+
+    const ticket = await createTicket(jiraConfig, {
+      projectKey,
+      summary: ticketSummary,
+      description,
+      issueType: 'Task',
+      labels: ['localization', 'missing-keys']
+    });
+
+    res.json(ticket);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 };

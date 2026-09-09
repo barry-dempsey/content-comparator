@@ -18,4 +18,7 @@ router.post('/batch-compare', comparisonController.batchCompareJSON);
 // Batch compare multiple target language files
 router.post('/batch-compare-files', comparisonController.batchCompareFiles);
 
+// Create Jira ticket for missing keys
+router.post('/create-jira-ticket', comparisonController.createJiraTicket);
+
 module.exports = router;

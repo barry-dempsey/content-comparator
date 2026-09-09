@@ -416,6 +416,7 @@
     <div class="tabs">
       <button class="tab-btn active" onclick="switchTab('single')">Single Compare</button>
       <button class="tab-btn" onclick="switchTab('batch')">Batch Compare</button>
+      <button class="tab-btn" onclick="switchTab('settings')">Jira Settings</button>
     </div>
 
     <!-- Single Compare Tab -->
@@ -479,6 +480,7 @@
           <button class="btn-success" onclick="exportAsJSON()">Export as JSON</button>
           <button class="btn-success" onclick="exportAsCSV()">Export as CSV</button>
           <button class="btn-success" onclick="exportAsReport()">Export as Report</button>
+          <button class="btn-success" onclick="createSingleJiraTicket()" style="background-color: var(--accent);">Create Jira Ticket</button>
         </div>
       </div>
 
@@ -529,6 +531,45 @@
       <div class="empty-state" id="emptyBatchState">
         <div class="empty-state-icon">📊</div>
         <p>Add target languages and click Compare All to analyze multiple language versions</p>
+      </div>
+    </div>
+
+    <!-- Jira Settings Tab -->
+    <div id="settings" class="tab-content">
+      <div class="form-group">
+        <label>Jira Instance Host</label>
+        <input type="text" id="jiraHost" placeholder="e.g., jira.company.com or your-domain.atlassian.net" value="">
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Jira Username/Email</label>
+          <input type="text" id="jiraUsername" placeholder="your-email@company.com">
+        </div>
+        <div class="form-group">
+          <label>Jira API Token</label>
+          <input type="password" id="jiraApiToken" placeholder="Paste your API token here">
+          <p style="font-size: 12px; color: var(--text-secondary); margin-top: 5px;">Get token from: https://id.atlassian.com/manage-profile/security/api-tokens</p>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Default Jira Project Key</label>
+        <input type="text" id="jiraProjectKey" placeholder="e.g., PROJ, CONTENT" value="">
+      </div>
+
+      <div class="button-group">
+        <button class="btn-primary" onclick="testJiraConnection()">Test Connection</button>
+        <button class="btn-secondary" onclick="clearJiraSettings()">Clear Settings</button>
+      </div>
+
+      <div id="jiraStatus" style="margin-top: 20px; display: none;" class="form-group">
+        <div id="jiraStatusMessage"></div>
+      </div>
+
+      <div class="empty-state" style="margin-top: 40px;">
+        <div class="empty-state-icon">🔗</div>
+        <p>Configure your Jira instance to enable ticket creation from comparison results</p>
       </div>
     </div>
   </div>
@@ -871,9 +912,118 @@
       URL.revokeObjectURL(url);
     }
 
-    // Initialize with one language input
+    // Jira Integration Functions
+    function getJiraConfig() {
+      const host = document.getElementById('jiraHost').value.trim();
+      const username = document.getElementById('jiraUsername').value.trim();
+      const apiToken = document.getElementById('jiraApiToken').value.trim();
+      const projectKey = document.getElementById('jiraProjectKey').value.trim();
+
+      if (!host || !username || !apiToken || !projectKey) {
+        showError('Please configure all Jira settings first (go to Jira Settings tab)');
+        return null;
+      }
+
+      return { host, username, apiToken, projectKey };
+    }
+
+    function testJiraConnection() {
+      const config = getJiraConfig();
+      if (!config) return;
+
+      const statusEl = document.getElementById('jiraStatus');
+      const messageEl = document.getElementById('jiraStatusMessage');
+
+      messageEl.innerHTML = '⏳ Testing connection...';
+      statusEl.style.display = 'block';
+
+      fetch('/api/create-jira-ticket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jiraConfig: config,
+          missingKeys: [],
+          sourceData: {},
+          targetLanguageName: 'Test',
+          projectKey: config.projectKey
+        })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) {
+          messageEl.innerHTML = `❌ Connection failed: ${data.error}`;
+          messageEl.style.color = 'var(--error)';
+        } else {
+          messageEl.innerHTML = `✅ Jira configured successfully! Ready to create tickets.`;
+          messageEl.style.color = 'var(--success)';
+          localStorage.setItem('jiraConfig', JSON.stringify(config));
+        }
+      })
+      .catch(err => {
+        messageEl.innerHTML = `❌ Error: ${err.message}`;
+        messageEl.style.color = 'var(--error)';
+      });
+    }
+
+    function clearJiraSettings() {
+      document.getElementById('jiraHost').value = '';
+      document.getElementById('jiraUsername').value = '';
+      document.getElementById('jiraApiToken').value = '';
+      document.getElementById('jiraProjectKey').value = '';
+      localStorage.removeItem('jiraConfig');
+      showSuccess('Jira settings cleared');
+    }
+
+    function createSingleJiraTicket() {
+      if (!currentSingleResult) return;
+
+      const config = getJiraConfig();
+      if (!config) return;
+
+      let sourceData = {};
+      try {
+        const sourceText = document.getElementById('sourceJSON').value;
+        sourceData = JSON.parse(sourceText);
+      } catch (e) {
+        showError('Could not parse source JSON');
+        return;
+      }
+
+      const targetLanguageName = document.getElementById('targetLanguageName').value || 'Target';
+
+      fetch('/api/create-jira-ticket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jiraConfig: config,
+          missingKeys: currentSingleResult.missingKeys,
+          sourceData: sourceData,
+          targetLanguageName: targetLanguageName,
+          projectKey: config.projectKey
+        })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) {
+          showError(`Failed to create ticket: ${data.error}`);
+        } else {
+          showSuccess(`Jira ticket created: ${data.ticketKey}`);
+          window.open(data.link, '_blank');
+        }
+      })
+      .catch(err => showError(`Error: ${err.message}`));
+    }
+
+    // Load Jira config from localStorage on page load
     window.addEventListener('load', () => {
       addLanguageInput();
+      const savedConfig = localStorage.getItem('jiraConfig');
+      if (savedConfig) {
+        const config = JSON.parse(savedConfig);
+        document.getElementById('jiraHost').value = config.host || '';
+        document.getElementById('jiraUsername').value = config.username || '';
+        document.getElementById('jiraProjectKey').value = config.projectKey || '';
+      }
     });
   </script>
 </body>
